@@ -13,7 +13,7 @@ Sadly, this isn't supported for fly.io.
 
 The solution:
 
-fly.io implements 'macaroons', a form of signed capabilities. This service bridges OIDC and Macaroons:
+fly.io implements 'macaroons', a form of 'cryptographic/password capabilities'. This service bridges OIDC and Macaroons:
 In fly.io terminology, it means each Fly token gets a [third-party caveat](https://fly.io/blog/macaroons-escalated-quickly/)
 pointing at this service, which leaves the token inert until the service adds a discharge.
 This service only adds a discharge after it validates the GitHub OIDC token
@@ -44,11 +44,12 @@ sequenceDiagram
 
 ## Run it
 
-You can launch the service using the published image.
-It carries no default policy, so you'll have to [write your own](#admission-policy)
-and deploy that.
+This code consists of a go service, and a [github action](#wire-up-a-repository).
+You can launch the service using the published image on fly.io.
+You'll have to [write your own](#admission-policy) and deploy it with the service.
+The admission policy describes which actions are allowed to discharge fly.io tokens.
 
-You need two files next to each other: `policy.yaml`, and a `fly.toml` that carries the app name,
+To configure and deploy the service, we two files: `policy.yaml`, and a `fly.toml` that carries the app name,
 the `[env]` block, and the `[[files]]` entry that maps the policy into the machine. Examples in
 this repository should work with modifications (below).
 
@@ -68,7 +69,8 @@ location exactly.
 
 ### Reaching it
 
-The default has no public IP, so the caller must be inside the Fly organization's private network.
+The default service config does not use a public IP.
+The caller must be inside the Fly organization's private network.
 
 | Deployment | Reachable by |
 |---|---|
@@ -82,8 +84,7 @@ fly ips allocate-v4 --shared
 fly ips allocate-v6
 ```
 
-A public deployment is exposed to anyone, so the OIDC check and the policy are all that stand in
-front of it. Both run before the ticket is examined.
+A public deployment should be safe as long as your policy is properly scoped.
 
 ### TLS
 
@@ -128,12 +129,12 @@ Going public is simpler: leave `TLS_CERT` unset, use the `[http_service]` block 
    Best practice: Store the printed `FlyV1 fm2_...` token as a GitHub **environment** secret of the matching
    environment, so only jobs targeting that environment can read it.
    Delete `*.tok`: the caveated token should be the only copy.
-   Delete `*.secret`: The secret content is only needed where the service runs after tokens are minted.
-   If you intent to re-mint new tokens with the same secret, store it in a safe place instead.
+   Delete `*.secret`: The secret is only needed by the service after tokens are minted.
+   If you intend to re-mint new caveat tokens with the same secret, store it in a safe place instead.
 
 3. Add the credential and its rules to `policy.yaml`, then `fly deploy`.
 
-4. Use it in a job.
+4. Use it in an actions workflow job.
 
    ```yaml
    jobs:
@@ -153,14 +154,16 @@ Going public is simpler: leave `TLS_CERT` unset, use the `[http_service]` block 
              FLY_API_TOKEN: ${{ steps.fly.outputs.token }}
    ```
 
-   The refs above are mutable for readability. Pin every action to a full commit
-   SHA in a job that holds deployment authority.
+   The refs above are mutable for readability. It's best practice to pin
+   every action to a commit SHA.
 
 ## Admission Policy
 
 A credential is one Fly token, identified by the shared secret its caveat was sealed with.
-The shared secrets are attached to the rules defined in the policy file that need to match in the JWT.
-Two credentials sharing a secret is rejected at startup, because a ticket could not select between them.
+The shared secrets are attached to the rules defined in the policy file that need to match in the JWT
+that is supplied by the github actions job.
+Two credentials sharing a secret will be rejected at startup but you can define multiple rules
+per secret/credential.
 
 ```yaml
 default_discharge_ttl: 15m
