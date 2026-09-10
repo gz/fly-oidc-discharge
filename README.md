@@ -44,14 +44,15 @@ sequenceDiagram
 
 ## Run it
 
-This code consists of a go service, and a [github action](#wire-up-a-repository).
+This code consists of a web service, and a [github action](#wire-up-a-repository).
 You can launch the service using the published image on fly.io.
-You'll have to [write your own](#admission-policy) and deploy it with the service.
-The admission policy describes which actions are allowed to discharge fly.io tokens.
+You'll have to [write your own policy](#admission-policy) and deploy it alongside the service.
+The admission policy describes which github actions will be allowed to discharge fly.io tokens.
 
-To configure and deploy the service, we two files: `policy.yaml`, and a `fly.toml` that carries the app name,
-the `[env]` block, and the `[[files]]` entry that maps the policy into the machine. Examples in
-this repository should work with modifications (below).
+To configure and deploy the service, we need to prepare two files:
+
+- the admission `policy.yaml` ([example](./policy.example.yaml))
+- and a `fly.toml` that carries the app name, the `[env]` block, and the `[[files]]` entry that maps the policy into the machine. Examples in this repository should work with minor modifications we describe next ([example](./fly.toml))
 
 ```bash
 git clone https://github.com/gz/fly-oidc-discharge && cd fly-oidc-discharge
@@ -108,6 +109,8 @@ Going public is simpler: leave `TLS_CERT` unset, use the `[http_service]` block 
 
 ## Wire up a repository
 
+To configure the repository that connects to fly.io to deploy your app:
+
 1. Generate one secret per credential and give them to the service.
 
    ```bash
@@ -117,8 +120,8 @@ Going public is simpler: leave `TLS_CERT` unset, use the `[http_service]` block 
      SHARED_SECRET_STAGING="$(cat STAGING.secret)"
    ```
 
-2. Mint one caveated token per environment. Use the same location string everywhere, no trailing
-   slash, and the secret belonging to that environment.
+2. Mint one caveated token (e.g., one per environment).
+   Use the same location string everywhere, no trailing slash, and the secret belonging to that environment.
 
    ```bash
    fly tokens create deploy --app my-app-prod --expiry 9999h > prod.tok
@@ -126,15 +129,15 @@ Going public is simpler: leave `TLS_CERT` unset, use the `[http_service]` block 
        --secret-file PROD.secret --access-token "$(cat prod.tok)"
    ```
 
-   Best practice: Store the printed `FlyV1 fm2_...` token as a GitHub **environment** secret of the matching
+   Best practices: Store the printed `FlyV1 fm2_...` token as a GitHub **environment** secret of the matching
    environment, so only jobs targeting that environment can read it.
    Delete `*.tok`: the caveated token should be the only copy.
-   Delete `*.secret`: The secret is only needed by the service after tokens are minted.
-   If you intend to re-mint new caveat tokens with the same secret, store it in a safe place instead.
+   Delete `*.secret`: The secret is only needed by the discharge service after tokens are minted.
+   If you intend to re-mint new caveat tokens with the same secret, store it in a safe place.
 
-3. Add the credential and its rules to `policy.yaml`, then `fly deploy`.
+4. Add the credential and its rules to `policy.yaml`, then `fly deploy`.
 
-4. Use it in an actions workflow job.
+5. Use it in an actions workflow job.
 
    ```yaml
    jobs:
